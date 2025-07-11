@@ -1,6 +1,7 @@
 import copy
 import pickle
 
+
 class NeuralNetwork:
     def __init__(self, optimizer, weights_initializer, bias_initializer):
         self.optimizer = optimizer
@@ -29,7 +30,21 @@ class NeuralNetwork:
         for layer in self.layers:
             input_tensor = layer.forward(input_tensor)
         loss = self.loss_layer.forward(input_tensor, self.label_tensor)
-        return loss
+
+        # Add regularization loss
+        regularization_loss = 0.0
+        for layer in self.layers:
+            if hasattr(layer, 'optimizer') and layer.optimizer and hasattr(layer.optimizer,
+                                                                           'regularizer') and layer.optimizer.regularizer:
+                if hasattr(layer, 'weights'):
+                    regularization_loss += layer.optimizer.regularizer.norm(layer.weights)
+                # For RNN layer, also check for fc_hidden and fc_output weights
+                if hasattr(layer, 'fc_hidden') and hasattr(layer.fc_hidden, 'weights'):
+                    regularization_loss += layer.optimizer.regularizer.norm(layer.fc_hidden.weights)
+                if hasattr(layer, 'fc_output') and hasattr(layer.fc_output, 'weights'):
+                    regularization_loss += layer.optimizer.regularizer.norm(layer.fc_output.weights)
+
+        return loss + regularization_loss
 
     def backward(self):
         error_tensor = self.loss_layer.backward(self.label_tensor)

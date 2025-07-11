@@ -69,8 +69,9 @@ class RNN(BaseLayer):
         self.fc_output.initialize(weights_initializer, bias_initializer)
 
     def calculate_regularization_loss(self):
+        """Calculate regularization loss for both FC layers."""
         loss = 0.0
-        if self.optimizer and self.optimizer.regularizer:
+        if self.optimizer and hasattr(self.optimizer, 'regularizer') and self.optimizer.regularizer:
             loss += self.optimizer.regularizer.norm(self.fc_hidden.weights)
             loss += self.optimizer.regularizer.norm(self.fc_output.weights)
         return loss
