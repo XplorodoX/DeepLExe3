@@ -111,16 +111,28 @@ class RNN(BaseLayer):
         batch_size = error_tensor.shape[0]
         input_error = np.zeros((batch_size, self.input_size))
 
-        # Initialize gradients
-        self.fc_hidden.gradient_weights = np.zeros_like(self.fc_hidden.weights)
-        self.fc_output.gradient_weights = np.zeros_like(self.fc_output.weights)
+        # Initialize accumulated gradients to zero
+        accumulated_hidden_gradient_weights = np.zeros_like(self.fc_hidden.weights)
+        accumulated_output_gradient_weights = np.zeros_like(self.fc_output.weights)
 
         hidden_error = np.zeros(self.hidden_size)
 
         # Backward pass through time
         for t in reversed(range(batch_size)):
             # Backward through output layer
-            output_error = self.fc_output.backward(error_tensor[t:t + 1])
+            # Set the input that was used during forward pass at time t
+            self.fc_output.input_tensor = self.hidden_cache[t + 1].reshape(1, -1)
+
+            # Create bias column for FC output layer (since it expects it)
+            bias_col = np.ones((1, 1))
+            self.fc_output.new_input = np.concatenate((bias_col, self.fc_output.input_tensor), axis=1)
+
+            # Compute output layer gradients
+            output_gradient_weights = np.dot(self.fc_output.new_input.T, error_tensor[t:t + 1])
+            accumulated_output_gradient_weights += output_gradient_weights
+
+            # Compute error to propagate back from output layer
+            output_error = np.dot(error_tensor[t:t + 1], self.fc_output.weights[1:, :].T)
 
             # Add hidden error from next timestep
             total_hidden_error = output_error.flatten() + hidden_error
@@ -130,14 +142,35 @@ class RNN(BaseLayer):
             hidden_grad = total_hidden_error * tanh_derivative
 
             # Backward through hidden layer
-            concatenated_error = self.fc_hidden.backward(hidden_grad.reshape(1, -1))
+            # Set the input that was used during forward pass at time t
+            self.fc_hidden.input_tensor = self.concatenated_cache[t]
+
+            # Create bias column for FC hidden layer
+            bias_col = np.ones((1, 1))
+            self.fc_hidden.new_input = np.concatenate((bias_col, self.fc_hidden.input_tensor), axis=1)
+
+            # Compute hidden layer gradients
+            hidden_gradient_weights = np.dot(self.fc_hidden.new_input.T, hidden_grad.reshape(1, -1))
+            accumulated_hidden_gradient_weights += hidden_gradient_weights
+
+            # Compute error to propagate back from hidden layer
+            concatenated_error = np.dot(hidden_grad.reshape(1, -1), self.fc_hidden.weights[1:, :].T)
 
             # Split error between hidden state and input
             hidden_error = concatenated_error[0, :self.hidden_size]
             input_error[t] = concatenated_error[0, self.hidden_size:]
 
-            # Set input for gradient calculation
-            self.fc_hidden.input_tensor = self.concatenated_cache[t]
-            self.fc_output.input_tensor = self.hidden_cache[t + 1].reshape(1, -1)
+        # Set the accumulated gradients
+        self.fc_hidden.gradient_weights = accumulated_hidden_gradient_weights
+        self.fc_output.gradient_weights = accumulated_output_gradient_weights
+
+        # Update weights if optimizers are available
+        if self.fc_hidden.optimizer is not None:
+            self.fc_hidden.weights = self.fc_hidden.optimizer.calculate_update(
+                self.fc_hidden.weights, self.fc_hidden.gradient_weights)
+
+        if self.fc_output.optimizer is not None:
+            self.fc_output.weights = self.fc_output.optimizer.calculate_update(
+                self.fc_output.weights, self.fc_output.gradient_weights)
 
         return input_error

@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 
 class Optimizer:
@@ -7,6 +8,9 @@ class Optimizer:
 
     def add_regularizer(self, regularizer):
         self.regularizer = regularizer
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 
 class Sgd(Optimizer):
